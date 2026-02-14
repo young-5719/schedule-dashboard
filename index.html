@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>강의장 스케줄 대시보드</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        evening: { light: '#FFF8E1', DEFAULT: '#FFF2CC', border: '#FFD54F', text: '#F57F17' },
+                        normal: { light: '#E3F2FD', DEFAULT: '#E8F0FE', border: '#64B5F6', text: '#1565C0' },
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        .table-wrapper { overflow-x: auto; }
+        .table-wrapper::-webkit-scrollbar { height: 8px; }
+        .table-wrapper::-webkit-scrollbar-track { background: #f1f5f9; border-radius: 4px; }
+        .table-wrapper::-webkit-scrollbar-thumb { background: #94a3b8; border-radius: 4px; }
+        .sticky-col { position: sticky; z-index: 10; }
+        .sticky-col-1 { left: 0; }
+        .sticky-col-2 { left: 96px; }
+        .card-evening { background: linear-gradient(135deg, #FFF8E1 0%, #FFF2CC 100%); border-left: 4px solid #FFD54F; }
+        .card-normal { background: linear-gradient(135deg, #E3F2FD 0%, #E8F0FE 100%); border-left: 4px solid #64B5F6; }
+        .chip { transition: all 0.15s ease; }
+        .chip:hover { transform: translateY(-1px); box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+        .chip-active { background-color: #1e40af; color: white; }
+        .fade-in { animation: fadeIn 0.3s ease-in; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+        @media (max-width: 768px) {
+            .sticky-col { position: relative; left: auto !important; }
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+
+    <!-- Header -->
+    <header class="bg-white border-b border-gray-200 shadow-sm">
+        <div class="max-w-screen-2xl mx-auto px-4 py-4 sm:px-6 lg:px-8">
+            <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                <div>
+                    <h1 class="text-xl sm:text-2xl font-bold text-gray-900">강의장 스케줄 대시보드</h1>
+                    <p class="text-sm text-gray-500 mt-0.5" id="updateInfo">데이터를 불러오는 중...</p>
+                </div>
+                <div class="flex items-center gap-3">
+                    <span class="inline-flex items-center gap-1.5 text-xs">
+                        <span class="w-3 h-3 rounded bg-evening border border-evening-border"></span> 야간(19시)
+                    </span>
+                    <span class="inline-flex items-center gap-1.5 text-xs">
+                        <span class="w-3 h-3 rounded bg-normal border border-normal-border"></span> 일반
+                    </span>
+                    <span class="inline-flex items-center gap-1.5 text-xs">
+                        <span class="w-2 h-2 rounded-full bg-red-500"></span> 주말
+                    </span>
+                    <button onclick="loadData()" class="ml-2 p-2 rounded-lg hover:bg-gray-100 text-gray-500" title="새로고침">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Stats -->
+    <div class="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8 mt-4">
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3" id="statsBar">
+            <div class="bg-white rounded-lg p-3 border border-gray-200 text-center">
+                <p class="text-2xl font-bold text-gray-900" id="statDates">-</p>
+                <p class="text-xs text-gray-500">조회 일수</p>
+            </div>
+            <div class="bg-white rounded-lg p-3 border border-gray-200 text-center">
+                <p class="text-2xl font-bold text-blue-600" id="statNormal">-</p>
+                <p class="text-xs text-gray-500">일반 수업</p>
+            </div>
+            <div class="bg-white rounded-lg p-3 border border-gray-200 text-center">
+                <p class="text-2xl font-bold text-amber-600" id="statEvening">-</p>
+                <p class="text-xs text-gray-500">야간 수업</p>
+            </div>
+            <div class="bg-white rounded-lg p-3 border border-gray-200 text-center">
+                <p class="text-2xl font-bold text-gray-900" id="statTotal">-</p>
+                <p class="text-xs text-gray-500">전체 수업</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Filters -->
+    <div class="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8 mt-4">
+        <div class="bg-white rounded-lg border border-gray-200 p-4">
+            <div class="flex flex-col lg:flex-row gap-4">
+                <!-- Classroom Filter -->
+                <div class="flex-1">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">강의장 필터</label>
+                    <div class="flex flex-wrap gap-2" id="classroomFilters"></div>
+                </div>
+                <!-- Date Filter -->
+                <div class="flex-shrink-0">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">날짜 필터</label>
+                    <div class="flex items-center gap-2">
+                        <input type="date" id="dateFrom" class="text-sm border border-gray-300 rounded-lg px-3 py-1.5 focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                        <span class="text-gray-400">~</span>
+                        <input type="date" id="dateTo" class="text-sm border border-gray-300 rounded-lg px-3 py-1.5 focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                        <button onclick="resetDateFilter()" class="text-sm text-gray-500 hover:text-gray-700 px-2 py-1.5 rounded hover:bg-gray-100">초기화</button>
+                    </div>
+                </div>
+                <!-- View Toggle -->
+                <div class="flex-shrink-0">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">보기 방식</label>
+                    <div class="flex rounded-lg border border-gray-300 overflow-hidden">
+                        <button id="btnTableView" onclick="setView('table')" class="px-3 py-1.5 text-sm bg-blue-600 text-white">표</button>
+                        <button id="btnCardView" onclick="setView('card')" class="px-3 py-1.5 text-sm bg-white text-gray-700 hover:bg-gray-50">카드</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Content Area -->
+    <div class="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8 mt-4 mb-8">
+        <!-- Loading -->
+        <div id="loadingState" class="bg-white rounded-lg border border-gray-200 p-12 text-center">
+            <div class="animate-spin w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full mx-auto"></div>
+            <p class="text-gray-500 mt-3">스케줄 데이터를 불러오는 중...</p>
+        </div>
+
+        <!-- Error -->
+        <div id="errorState" class="hidden bg-white rounded-lg border border-red-200 p-8 text-center">
+            <p class="text-red-600 font-medium">데이터를 불러올 수 없습니다</p>
+            <p class="text-gray-500 text-sm mt-1" id="errorMessage"></p>
+            <button onclick="useDemoData()" class="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700">데모 데이터로 보기</button>
+        </div>
+
+        <!-- Table View -->
+        <div id="tableView" class="hidden">
+            <div class="bg-white rounded-lg border border-gray-200 overflow-hidden">
+                <div class="table-wrapper">
+                    <table class="w-full" id="scheduleTable">
+                        <thead id="tableHead"></thead>
+                        <tbody id="tableBody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Card View -->
+        <div id="cardView" class="hidden space-y-4" ></div>
+    </div>
+
+    <script>
+    // ============================================================
+    // 설정: 아래 URL을 Apps Script 배포 URL로 교체하세요
+    // ============================================================
+    const APPS_SCRIPT_URL = '';
+
+    // ============================================================
+    // State
+    // ============================================================
+    let rawData = null;
+    let activeClassrooms = new Set();
+    let currentView = 'table';
+
+    // ============================================================
+    // Demo Data (API 연결 전 테스트용)
+    // ============================================================
+    const DEMO_DATA = {
+        classrooms: ["601", "602", "603", "604", "605", "606", "607", "608", "609", "610"],
+        schedule: [
+            { date: "2026-02-14", day: "토", rooms: { "601": "[09:00~18:00]\n자바(Java) 풀스택 개발자 양성과정 3회차", "603": "[19:00~22:00]\n파이썬 데이터 분석 입문", "605": "[09:00~18:00]\nUI/UX 디자인 실무과정" } },
+            { date: "2026-02-15", day: "일", rooms: { "602": "[09:00~18:00]\n클라우드 엔지니어 양성과정", "607": "[19:00~22:00]\n정보처리기사 실기 대비반" } },
+            { date: "2026-02-16", day: "월", rooms: { "601": "[09:00~18:00]\n자바(Java) 풀스택 개발자 양성과정 3회차", "602": "[09:00~18:00]\n클라우드 엔지니어 양성과정", "603": "[19:00~22:00]\n파이썬 데이터 분석 입문", "604": "[09:00~18:00]\n빅데이터 분석기사 취득과정", "606": "[09:00~18:00]\n스프링부트 웹개발 실무", "608": "[19:00~22:00]\nAWS 클라우드 자격증 과정" } },
+            { date: "2026-02-17", day: "화", rooms: { "601": "[09:00~18:00]\n자바(Java) 풀스택 개발자 양성과정 3회차", "602": "[09:00~18:00]\n클라우드 엔지니어 양성과정", "603": "[19:00~22:00]\n파이썬 데이터 분석 입문", "605": "[09:00~18:00]\nUI/UX 디자인 실무과정", "609": "[09:00~18:00]\nReact 프론트엔드 개발", "610": "[19:00~22:00]\nSQL 데이터베이스 기초" } },
+            { date: "2026-02-18", day: "수", rooms: { "601": "[09:00~18:00]\n자바(Java) 풀스택 개발자 양성과정 3회차", "604": "[09:00~18:00]\n빅데이터 분석기사 취득과정", "606": "[09:00~18:00]\n스프링부트 웹개발 실무", "607": "[19:00~22:00]\n정보처리기사 실기 대비반" } },
+            { date: "2026-02-19", day: "목", rooms: { "601": "[09:00~18:00]\n자바(Java) 풀스택 개발자 양성과정 3회차", "602": "[09:00~18:00]\n클라우드 엔지니어 양성과정", "603": "[19:00~22:00]\n파이썬 데이터 분석 입문", "605": "[09:00~18:00]\nUI/UX 디자인 실무과정", "608": "[19:00~22:00]\nAWS 클라우드 자격증 과정", "610": "[19:00~22:00]\nSQL 데이터베이스 기초" } },
+            { date: "2026-02-20", day: "금", rooms: { "601": "[09:00~18:00]\n자바(Java) 풀스택 개발자 양성과정 3회차", "604": "[09:00~18:00]\n빅데이터 분석기사 취득과정", "606": "[09:00~18:00]\n스프링부트 웹개발 실무", "609": "[09:00~18:00]\nReact 프론트엔드 개발" } },
+            { date: "2026-02-21", day: "토", rooms: { "602": "[09:00~18:00]\n클라우드 엔지니어 양성과정" } },
+            { date: "2026-02-22", day: "일", rooms: {} },
+            { date: "2026-02-23", day: "월", rooms: { "601": "[09:00~18:00]\n자바(Java) 풀스택 개발자 양성과정 3회차", "602": "[09:00~18:00]\n클라우드 엔지니어 양성과정", "603": "[19:00~22:00]\n파이썬 데이터 분석 입문", "604": "[09:00~18:00]\n빅데이터 분석기사 취득과정", "605": "[09:00~18:00]\nUI/UX 디자인 실무과정", "607": "[19:00~22:00]\n정보처리기사 실기 대비반", "609": "[09:00~18:00]\nReact 프론트엔드 개발" } },
+        ],
+        updatedAt: new Date().toISOString()
+    };
+
+    // ============================================================
+    // Data Loading
+    // ============================================================
+    async function loadData() {
+        showState('loading');
+        if (!APPS_SCRIPT_URL) {
+            useDemoData();
+            return;
+        }
+        try {
+            const response = await fetch(APPS_SCRIPT_URL);
+            const data = await response.json();
+            if (data.error) throw new Error(data.error);
+            rawData = data;
+            initDashboard();
+        } catch (err) {
+            document.getElementById('errorMessage').textContent = err.message;
+            showState('error');
+        }
+    }
+
+    function useDemoData() {
+        rawData = DEMO_DATA;
+        document.getElementById('updateInfo').textContent = '데모 데이터 표시 중 (API 미연결)';
+        initDashboard();
+    }
+
+    // ============================================================
+    // Init
+    // ============================================================
+    function initDashboard() {
+        buildClassroomFilters();
+        render();
+        showState(currentView);
+        if (rawData.updatedAt && APPS_SCRIPT_URL) {
+            const d = new Date(rawData.updatedAt);
+            document.getElementById('updateInfo').textContent =
+                '마지막 업데이트: ' + d.toLocaleDateString('ko-KR') + ' ' + d.toLocaleTimeString('ko-KR');
+        }
+    }
+
+    function buildClassroomFilters() {
+        const container = document.getElementById('classroomFilters');
+        container.innerHTML = '';
+        // "전체" chip
+        const allChip = createChip('전체', true, () => {
+            activeClassrooms = new Set(rawData.classrooms);
+            syncChips();
+            render();
+        });
+        allChip.id = 'chipAll';
+        container.appendChild(allChip);
+
+        rawData.classrooms.forEach(room => {
+            activeClassrooms.add(room);
+            const chip = createChip(room + '호', true, () => {
+                if (activeClassrooms.has(room)) activeClassrooms.delete(room);
+                else activeClassrooms.add(room);
+                syncChips();
+                render();
+            });
+            chip.dataset.room = room;
+            container.appendChild(chip);
+        });
+    }
+
+    function createChip(label, active, onClick) {
+        const btn = document.createElement('button');
+        btn.textContent = label;
+        btn.className = 'chip px-3 py-1 rounded-full text-sm font-medium border ' +
+            (active ? 'chip-active border-blue-800' : 'bg-white text-gray-600 border-gray-300');
+        btn.addEventListener('click', onClick);
+        return btn;
+    }
+
+    function syncChips() {
+        const allActive = activeClassrooms.size === rawData.classrooms.length;
+        const allChip = document.getElementById('chipAll');
+        if (allChip) {
+            allChip.className = 'chip px-3 py-1 rounded-full text-sm font-medium border ' +
+                (allActive ? 'chip-active border-blue-800' : 'bg-white text-gray-600 border-gray-300');
+        }
+        document.querySelectorAll('[data-room]').forEach(chip => {
+            const active = activeClassrooms.has(chip.dataset.room);
+            chip.className = 'chip px-3 py-1 rounded-full text-sm font-medium border ' +
+                (active ? 'chip-active border-blue-800' : 'bg-white text-gray-600 border-gray-300');
+        });
+    }
+
+    // ============================================================
+    // Filtering
+    // ============================================================
+    function getFilteredData() {
+        const dateFrom = document.getElementById('dateFrom').value;
+        const dateTo = document.getElementById('dateTo').value;
+
+        return rawData.schedule.filter(entry => {
+            if (dateFrom && entry.date < dateFrom) return false;
+            if (dateTo && entry.date > dateTo) return false;
+            return true;
+        });
+    }
+
+    function resetDateFilter() {
+        document.getElementById('dateFrom').value = '';
+        document.getElementById('dateTo').value = '';
+        render();
+    }
+
+    // ============================================================
+    // Helpers
+    // ============================================================
+    function isWeekend(dayStr) {
+        return dayStr === '토' || dayStr === '일';
+    }
+
+    function isEvening(cellText) {
+        return cellText.startsWith('[19:00');
+    }
+
+    function parseCellClasses(cellText) {
+        // Split multiple classes in one cell (separated by double newline)
+        const blocks = cellText.split(/\n\n+/);
+        return blocks.map(block => {
+            const lines = block.trim().split('\n');
+            const timeLine = lines[0] || '';
+            const courseName = lines.slice(1).join(' ') || '';
+            const timeMatch = timeLine.match(/\[(.+?)~(.+?)\]/);
+            return {
+                time: timeMatch ? timeMatch[1] + '~' + timeMatch[2] : timeLine,
+                course: courseName,
+                isEvening: timeLine.startsWith('[19:00'),
+                raw: block.trim()
+            };
+        });
+    }
+
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    // ============================================================
+    // Stats
+    // ============================================================
+    function updateStats(filteredData) {
+        let normalCount = 0, eveningCount = 0;
+        const visibleRooms = [...activeClassrooms];
+
+        filteredData.forEach(entry => {
+            visibleRooms.forEach(room => {
+                if (entry.rooms[room]) {
+                    const classes = parseCellClasses(entry.rooms[room]);
+                    classes.forEach(c => {
+                        if (c.isEvening) eveningCount++;
+                        else normalCount++;
+                    });
+                }
+            });
+        });
+
+        document.getElementById('statDates').textContent = filteredData.length;
+        document.getElementById('statNormal').textContent = normalCount;
+        document.getElementById('statEvening').textContent = eveningCount;
+        document.getElementById('statTotal').textContent = normalCount + eveningCount;
+    }
+
+    // ============================================================
+    // Table View Render
+    // ============================================================
+    function renderTable(filteredData) {
+        const visibleRooms = rawData.classrooms.filter(r => activeClassrooms.has(r));
+        const thead = document.getElementById('tableHead');
+        const tbody = document.getElementById('tableBody');
+
+        // Header
+        let headerHtml = '<tr>';
+        headerHtml += '<th class="sticky-col sticky-col-1 bg-gray-800 text-white px-3 py-3 text-sm font-semibold text-center w-24 min-w-[96px]">날짜</th>';
+        headerHtml += '<th class="sticky-col sticky-col-2 bg-gray-800 text-white px-2 py-3 text-sm font-semibold text-center w-10 min-w-[40px]">요일</th>';
+        visibleRooms.forEach(room => {
+            headerHtml += `<th class="bg-gray-800 text-white px-2 py-3 text-sm font-semibold text-center min-w-[150px]">${room}호</th>`;
+        });
+        headerHtml += '</tr>';
+        thead.innerHTML = headerHtml;
+
+        // Body
+        let bodyHtml = '';
+        filteredData.forEach(entry => {
+            const weekend = isWeekend(entry.day);
+            const rowBg = weekend ? 'bg-red-50' : 'bg-white';
+            bodyHtml += `<tr class="${rowBg} border-b border-gray-100 hover:bg-gray-50/50">`;
+
+            // Date col
+            bodyHtml += `<td class="sticky-col sticky-col-1 ${rowBg} px-3 py-2 text-sm text-center font-medium whitespace-nowrap border-r border-gray-100">`;
+            if (weekend) bodyHtml += '<span class="inline-block w-2 h-2 rounded-full bg-red-500 mr-1 align-middle"></span>';
+            bodyHtml += `${entry.date.slice(5)}</td>`;
+
+            // Day col
+            bodyHtml += `<td class="sticky-col sticky-col-2 ${rowBg} px-2 py-2 text-sm text-center border-r border-gray-100 ${weekend ? 'text-red-600 font-bold' : 'text-gray-600'}">${entry.day}</td>`;
+
+            // Room cols
+            visibleRooms.forEach(room => {
+                const cellText = entry.rooms[room] || '';
+                if (!cellText) {
+                    bodyHtml += '<td class="px-2 py-2 border-r border-gray-50"></td>';
+                    return;
+                }
+                const classes = parseCellClasses(cellText);
+                bodyHtml += '<td class="px-2 py-1.5 border-r border-gray-50">';
+                classes.forEach(c => {
+                    const cardClass = c.isEvening ? 'card-evening' : 'card-normal';
+                    const timeColor = c.isEvening ? 'text-evening-text' : 'text-normal-text';
+                    bodyHtml += `<div class="${cardClass} rounded-md px-2 py-1.5 mb-1 last:mb-0">`;
+                    bodyHtml += `<div class="${timeColor} text-xs font-semibold">${escapeHtml(c.time)}</div>`;
+                    bodyHtml += `<div class="text-gray-800 text-xs mt-0.5 leading-snug">${escapeHtml(c.course)}</div>`;
+                    bodyHtml += '</div>';
+                });
+                bodyHtml += '</td>';
+            });
+
+            bodyHtml += '</tr>';
+        });
+        tbody.innerHTML = bodyHtml;
+    }
+
+    // ============================================================
+    // Card View Render
+    // ============================================================
+    function renderCards(filteredData) {
+        const container = document.getElementById('cardView');
+        const visibleRooms = rawData.classrooms.filter(r => activeClassrooms.has(r));
+        let html = '';
+
+        filteredData.forEach(entry => {
+            const weekend = isWeekend(entry.day);
+            const hasClasses = visibleRooms.some(r => entry.rooms[r]);
+
+            html += `<div class="fade-in bg-white rounded-lg border ${weekend ? 'border-red-200' : 'border-gray-200'} overflow-hidden">`;
+
+            // Date header
+            html += `<div class="px-4 py-3 ${weekend ? 'bg-red-50 border-b border-red-200' : 'bg-gray-50 border-b border-gray-200'} flex items-center gap-2">`;
+            if (weekend) html += '<span class="w-2.5 h-2.5 rounded-full bg-red-500 flex-shrink-0"></span>';
+            html += `<span class="font-semibold ${weekend ? 'text-red-700' : 'text-gray-900'}">${entry.date}</span>`;
+            html += `<span class="text-sm ${weekend ? 'text-red-600 font-bold' : 'text-gray-500'}">(${entry.day})</span>`;
+
+            if (!hasClasses) html += '<span class="ml-auto text-sm text-gray-400">수업 없음</span>';
+            html += '</div>';
+
+            if (hasClasses) {
+                html += '<div class="p-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2">';
+                visibleRooms.forEach(room => {
+                    if (!entry.rooms[room]) return;
+                    const classes = parseCellClasses(entry.rooms[room]);
+                    classes.forEach(c => {
+                        const cardClass = c.isEvening ? 'card-evening' : 'card-normal';
+                        const badgeClass = c.isEvening
+                            ? 'bg-amber-100 text-amber-800 border-amber-300'
+                            : 'bg-blue-100 text-blue-800 border-blue-300';
+                        const timeColor = c.isEvening ? 'text-evening-text' : 'text-normal-text';
+
+                        html += `<div class="${cardClass} rounded-lg px-3 py-2.5">`;
+                        html += `<div class="flex items-center justify-between mb-1">`;
+                        html += `<span class="inline-block px-2 py-0.5 rounded text-xs font-bold border ${badgeClass}">${room}호</span>`;
+                        html += `<span class="${timeColor} text-xs font-semibold">${escapeHtml(c.time)}</span>`;
+                        html += '</div>';
+                        html += `<p class="text-sm text-gray-800 leading-snug">${escapeHtml(c.course)}</p>`;
+                        html += '</div>';
+                    });
+                });
+                html += '</div>';
+            }
+            html += '</div>';
+        });
+
+        container.innerHTML = html;
+    }
+
+    // ============================================================
+    // Render & View Management
+    // ============================================================
+    function render() {
+        const filtered = getFilteredData();
+        updateStats(filtered);
+        renderTable(filtered);
+        renderCards(filtered);
+    }
+
+    function setView(view) {
+        currentView = view;
+        document.getElementById('btnTableView').className = 'px-3 py-1.5 text-sm ' +
+            (view === 'table' ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50');
+        document.getElementById('btnCardView').className = 'px-3 py-1.5 text-sm ' +
+            (view === 'card' ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50');
+        showState(view);
+    }
+
+    function showState(state) {
+        document.getElementById('loadingState').classList.add('hidden');
+        document.getElementById('errorState').classList.add('hidden');
+        document.getElementById('tableView').classList.add('hidden');
+        document.getElementById('cardView').classList.add('hidden');
+
+        if (state === 'loading') document.getElementById('loadingState').classList.remove('hidden');
+        else if (state === 'error') document.getElementById('errorState').classList.remove('hidden');
+        else if (state === 'table') document.getElementById('tableView').classList.remove('hidden');
+        else if (state === 'card') document.getElementById('cardView').classList.remove('hidden');
+    }
+
+    // ============================================================
+    // Event Listeners
+    // ============================================================
+    document.getElementById('dateFrom').addEventListener('change', render);
+    document.getElementById('dateTo').addEventListener('change', render);
+
+    // ============================================================
+    // Init
+    // ============================================================
+    loadData();
+    </script>
+</body>
+</html>
